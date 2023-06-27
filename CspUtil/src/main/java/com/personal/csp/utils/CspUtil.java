@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Point;
@@ -20,6 +22,14 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import com.facebook.drawee.backends.pipeline.Fresco;
+import com.facebook.drawee.backends.pipeline.PipelineDraweeControllerBuilder;
+import com.facebook.drawee.drawable.ScalingUtils;
+import com.facebook.drawee.view.SimpleDraweeView;
+import com.facebook.imagepipeline.common.ImageDecodeOptions;
+import com.facebook.imagepipeline.common.ImageDecodeOptionsBuilder;
+import com.facebook.imagepipeline.request.ImageRequest;
+import com.facebook.imagepipeline.request.ImageRequestBuilder;
 import com.google.android.material.tabs.TabLayout;
 
 import java.io.BufferedReader;
@@ -32,6 +42,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -423,35 +434,6 @@ public class CspUtil {
         return Build.BRAND;
     }
 
-    /**
-     * 获取手机IMEI(需要“android.permission.READ_PHONE_STATE”权限)
-     *
-     * @return 手机IMEI
-     */
-//    public static String getIMEI(Context ctx) {
-//        TelephonyManager tm = (TelephonyManager) ctx.getSystemService(Activity.TELEPHONY_SERVICE);
-//        if (tm != null) {
-//            return tm.getDeviceId();
-//        }
-//        return null;
-//    }
-    /****************************************************************************************************/
-    /**
-     * 修改电池栏颜色
-     */
-//    public static void setHintColor(Activity context, int color) {
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-//            //   setTranslucentStatus(true);
-//            Window win = context.getWindow();
-//            WindowManager.LayoutParams winParams = win.getAttributes();
-//            final int bits = WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS;
-//            winParams.flags |= bits;
-//            win.setAttributes(winParams);
-//            SystemBarTintManager tintManager = new SystemBarTintManager(context);
-//            tintManager.setStatusBarTintEnabled(true);
-//            tintManager.setStatusBarTintResource(color);
-//        }
-//    }
 
     /**
      * 获取手机屏幕宽度
@@ -789,5 +771,169 @@ public class CspUtil {
             }
         }
         return null;
+    }
+    /**
+     * 处理 Fresco的圆角与GIF不能兼得的解决方案
+     *
+     * @param draweeView
+     * @param url
+     */
+    public static void frescoGifAndAsCircle(SimpleDraweeView draweeView, String url) {
+        if (url == null || draweeView == null) {
+            return;
+        }
+        if (url.contains("gif") || url.contains("GIF")) {
+
+            draweeView.getHierarchy().setActualImageScaleType(ScalingUtils.ScaleType.FIT_XY);
+
+            ImageDecodeOptions imageDecodeOptions = new ImageDecodeOptionsBuilder()
+                    .setForceStaticImage(true)
+                    .build();
+
+            ImageRequest request = ImageRequestBuilder.newBuilderWithSource(Uri.parse(url))
+                    .setCacheChoice(ImageRequest.CacheChoice.SMALL)
+                    .setImageDecodeOptions(imageDecodeOptions)
+                    .build();
+
+            PipelineDraweeControllerBuilder builder = Fresco.getDraweeControllerBuilderSupplier().get()
+                    .setOldController(draweeView.getController())
+                    .setImageRequest(request);
+
+            draweeView.setController(builder.build());
+        } else {
+            draweeView.setImageURI(url);
+        }
+    }
+    /**
+     * 通过视频时长返回 string
+     *
+     * @param track 视频时长，单位秒
+     * @return 对视频时长进行格式转换   返回  XX秒、XX分XX秒、X.X小时  等字样
+     */
+    public static String transformTimeFromTrack(int track) {
+        if (track == 0) {
+            return "0";
+        }
+        if (track < 60) {
+            return track + "秒";
+        } else if (track < 60 * 60) {
+            int minute = track / 60;
+            int seconds = track % 60;
+            return minute + "分" + seconds + "秒";
+        } else {
+            double hour = (double) track / 60 / 60;
+
+            return new DecimalFormat("#.0").format(hour) + "小时";
+        }
+    }
+
+    /**
+     * 通过视频时长返回 string
+     *
+     * @param track 视频时长，单位秒
+     * @return 对视频时长进行格式转换   返回  mm:ss
+     */
+    public static String transformVideoCenterTimeFromTrack(int track) {
+        if (track < 10) {
+            return "00:0" + track;
+        } else if (track < 60) {
+            return "00:" + track;
+        } else if (track < 60 * 10) {
+            int minute = track / 60;
+            int seconds = track % 60;
+
+            if (seconds < 10) {
+                return "0" + minute + ":0" + seconds;
+            }
+            return "0" + minute + ":" + seconds;
+        } else if (track < 60 * 60 * 24) {
+            int minute = track / 60;
+            int seconds = track % 60;
+
+            if (seconds < 10) {
+                return minute + ":0" + seconds;
+            }
+            return minute + ":" + seconds;
+        }
+        return "00:00";
+    }
+    /**
+     * 银行卡号加密  6222************8421
+     *
+     * @return
+     */
+    public static String transformBankCardNum(String card) {
+        if (TextUtils.isEmpty(card)) {
+            return "";
+        }
+        if (card.length() > 8) {
+            String startStr = card.substring(0, 4);
+            String endStr = card.substring(card.length() - 4);
+            String middleStr = card.substring(4, card.length() - 4);
+            String[] middle = new String[middleStr.length()];
+            Arrays.fill(middle, "*");
+
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < middle.length; i++) {
+                b.append(middle[i]);
+            }
+            return startStr + b+ endStr;
+        }
+        return card;
+    }
+    /**
+     * 手机号加密  183****0639
+     *
+     * @return
+     */
+    public static String transformPhoneNum(String phone) {
+        if (TextUtils.isEmpty(phone)) {
+            return "";
+        }
+        if (phone.length() > 8) {
+            String startStr = phone.substring(0, 3);
+            String endStr = phone.substring(phone.length() - 4);
+            String middleStr = phone.substring(3, phone.length() - 4);
+            String[] middle = new String[middleStr.length()];
+            Arrays.fill(middle, "*");
+
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < middle.length; i++) {
+                b.append(middle[i]);
+            }
+            return startStr + b+ endStr;
+        }
+        return phone;
+    }
+    /**
+     * 金额保留两位小数
+     *
+     * @return
+     */
+    public static String priceTwoDecimalPlaces(Object price){
+        //税前金额
+        DecimalFormat decimalFormat =new  DecimalFormat("0.00"); //构造方法的字符格式这里如果小数不足2位,会以0补足.
+        return decimalFormat.format(price);
+    }
+    /**
+     * 金额保留一位小数
+     * @param price
+     * @return
+     */
+    public static String priceOneDecimalPlaces(Object price){
+        //税前金额
+        DecimalFormat decimalFormat =new  DecimalFormat("0.0"); //构造方法的字符格式这里如果小
+        return decimalFormat.format(price);
+    }
+    public static String getVersionName(Context context) {
+        String versionName = "1.0";
+        PackageManager manager = context.getPackageManager();
+        try {
+            PackageInfo info = manager.getPackageInfo(context.getPackageName(), 0);
+            versionName = info.versionName;   //版本名
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        return versionName;
     }
 }
